@@ -18,7 +18,7 @@ go get github.com/githubDante/solarman
 
 ### Protocol documentation
 
-For an excelent in-depth breakdown of the SolarmanV5 protocol, please refer to the documentation provided by @jmccrohan [here](https://pysolarmanv5.readthedocs.io/en/stable/solarmanv5_protocol.html)
+For an excelent in-depth breakdown of the SolarmanV5 protocol, please refer to the documentation provided by [@jmccrohan](https://github.com/jmccrohan) [here](https://pysolarmanv5.readthedocs.io/en/stable/solarmanv5_protocol.html)
 
 #### Tests
 
