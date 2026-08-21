@@ -130,10 +130,6 @@ func (rq *V5Request) Valid() bool {
 	return rq.Header == V5Start && rq.v5Trailer.End == V5End && v5Checksum(rq) == rq.v5Trailer.Checksum
 }
 
-func (rq *V5Request) IsRequest() bool {
-	return PacketType(rq.CCode) == V5ModbusRequestPacket
-}
-
 func (rq *V5Request) Type() PacketType {
 	return PacketType(rq.CCode)
 }
@@ -175,10 +171,6 @@ func (rs *V5Response) Valid() bool {
 	return rs.Header == V5Start && rs.v5Trailer.End == V5End && v5Checksum(rs) == rs.v5Trailer.Checksum
 }
 
-func (rs *V5Response) IsRequest() bool {
-	return PacketType(rs.CCode) == V5ModbusRequestPacket
-}
-
 func (rs *V5Response) Type() PacketType {
 	return PacketType(rs.CCode)
 }
@@ -216,10 +208,6 @@ func (kl *V5KeepAlive) Raw() []byte {
 
 func (kl *V5KeepAlive) Valid() bool {
 	return kl.Header == V5Start && kl.End == V5End
-}
-
-func (kl *V5KeepAlive) IsRequest() bool {
-	return PacketType(kl.CCode) == V5ModbusResponsePacket
 }
 
 func (kl *V5KeepAlive) Type() PacketType {
