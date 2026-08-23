@@ -9,15 +9,32 @@ import (
 type PacketType uint16
 
 const (
-	V5ModbusResponsePacket PacketType = 0x1510
-	V5ModbusRequestPacket  PacketType = 0x4510
-	V5KeepAlivePacket      PacketType = 0x4710
+	V5ModbusResponsePacket  PacketType = 0x1510
+	V5ModbusRequestPacket   PacketType = 0x4510
+	V5KeepAlivePacket       PacketType = 0x4710
+	V5LoggerCloudInit       PacketType = 0x4110
+	V5LoggerCloudReport     PacketType = 0x4210
+	V5LoggerCloudWifiReport PacketType = 0x4310
+	V5LoggerCloudUnknReport PacketType = 0x4810
+
+	V5CloudServerIAck PacketType = 0x1110 // Bitwise AND NOT (&^) of the V5LoggerCloudInit
+	V5CloudServerRAck PacketType = 0x1210 // Bitwise AND NOT (&^) of the V5LoggerCloudReport
+	V5CloudServerWAck PacketType = 0x1310
+	V5CloudServerUAck PacketType = 0x1810
 )
 
 var packetName = map[PacketType]string{
-	V5ModbusRequestPacket:  "RequestPacket",
-	V5ModbusResponsePacket: "ResponsePacket",
-	V5KeepAlivePacket:      "KeepAlive/TimeSync",
+	V5ModbusRequestPacket:   "RequestPacket",
+	V5ModbusResponsePacket:  "ResponsePacket",
+	V5KeepAlivePacket:       "KeepAlive/TimeSync",
+	V5LoggerCloudReport:     "LoggerCloudReport",
+	V5LoggerCloudWifiReport: "LoggerCloudWiFiReport",
+	V5LoggerCloudUnknReport: "LoggerCloudUnknownReport",
+	V5LoggerCloudInit:       "LoggerCloudInit",
+	V5CloudServerIAck:       "CloudSrvInitAck",
+	V5CloudServerRAck:       "CloudSrvReportAck",
+	V5CloudServerWAck:       "CloudSrvWiFiAck",
+	V5CloudServerUAck:       "CloudSrvUnknownReportAck",
 }
 
 const (
@@ -74,6 +91,12 @@ type V5Response struct {
 type V5KeepAlive struct {
 	v5Common
 	End uint8
+}
+
+type V5CloudAck struct {
+	v5Common
+	Ack []byte
+	v5Trailer
 }
 
 type V5Packet interface {
@@ -222,6 +245,46 @@ func (kl *V5KeepAlive) SequenceNum() uint8 {
 	return kl.SeqOut
 }
 
+func (ca *V5CloudAck) LoggerSerial() uint32 {
+	return ca.LoggerSn
+}
+
+func (ca *V5CloudAck) ModbusRTU() []byte {
+	return ca.Ack
+}
+
+func (ca *V5CloudAck) LengthV5() uint16 {
+	return ca.Length
+}
+
+func (ca *V5CloudAck) ChecksumV5() uint8 {
+	return ca.Checksum
+}
+
+func (ca *V5CloudAck) Raw() []byte {
+	buf := new(bytes.Buffer)
+	binary.Write(buf, binary.LittleEndian, ca.v5Common)
+	binary.Write(buf, binary.BigEndian, ca.Ack)
+	binary.Write(buf, binary.LittleEndian, ca.v5Trailer)
+	return buf.Bytes()
+}
+
+func (ca *V5CloudAck) Valid() bool {
+	return ca.Header == V5Start && ca.End == V5End && v5Checksum(ca) == ca.v5Trailer.Checksum
+}
+
+func (ca *V5CloudAck) Type() PacketType {
+	return PacketType(ca.CCode)
+}
+
+func (ca *V5CloudAck) TypeName() string {
+	return packetName[ca.Type()]
+}
+
+func (ca *V5CloudAck) SequenceNum() uint8 {
+	return ca.SeqOut
+}
+
 // RawToPacket
 //
 // This is a parser for raw bytes -> SolarmanV5 packet
@@ -254,7 +317,12 @@ func RawToPacket(payload []byte) (V5Packet, error) {
 		pkt.v5Trailer.Checksum = payload[len(payload)-2]
 		pkt.v5Trailer.End = payload[len(payload)-1]
 		return pkt, nil
-	case V5ModbusResponsePacket:
+	case V5ModbusResponsePacket, // Logger responses V5 & Cloud
+		V5LoggerCloudReport,
+		V5LoggerCloudInit,
+		V5LoggerCloudWifiReport,
+		V5LoggerCloudUnknReport:
+
 		pkt := new(V5Response)
 		buf := bytes.NewReader(payload[:len(payload)-2])
 		err = binary.Read(buf, binary.LittleEndian, &pkt.v5Common)
@@ -282,6 +350,28 @@ func RawToPacket(payload []byte) (V5Packet, error) {
 		}
 		pkt.End = payload[len(payload)-1]
 		return pkt, nil
+	case V5CloudServerIAck, // Cloud Server
+		V5CloudServerRAck,
+		V5CloudServerWAck,
+		V5CloudServerUAck:
+
+		pkt := new(V5CloudAck)
+		buf := bytes.NewReader(payload)
+		err = binary.Read(buf, binary.LittleEndian, &pkt.v5Common)
+		if err != nil {
+			return nil, err
+		}
+		pkt.Ack = make([]byte, buf.Len()-2)
+		err = binary.Read(buf, binary.BigEndian, &pkt.Ack)
+		if err != nil {
+			return nil, err
+		}
+		err = binary.Read(buf, binary.BigEndian, &pkt.v5Trailer)
+		if err != nil {
+			return nil, err
+		}
+		return pkt, nil
+
 	default:
 		return nil, errors.New("unsupported packet type")
 
@@ -302,4 +392,11 @@ func v5LengthCalc(pkt V5Packet) uint16 {
 	var hdr v5Common
 	var trl v5Trailer
 	return uint16(len(b) - binary.Size(&trl) - binary.Size(&hdr))
+}
+
+// MinPacketLength returns the length of the V5 packet Header & Trailer
+func MinPacketLength() int {
+	var hdr v5Common
+	var trl v5Trailer
+	return binary.Size(&trl) + binary.Size(&hdr)
 }
